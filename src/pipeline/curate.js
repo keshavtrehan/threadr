@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
 
-const MODEL = 'claude-haiku-4-5-20251001';
+const MODEL = 'claude-sonnet-4-5-20251022';
 
 const PREFERENCES_PATH = path.join(__dirname, '../../config/preferences.md');
 const FORMAT_PATH      = path.join(__dirname, '../../config/format.md');
@@ -143,7 +143,7 @@ async function curate(resolvedEmails) {
 
   const message = await client.messages.create({
     model:      MODEL,
-    max_tokens: 2048,
+    max_tokens: 4096,
     system:     buildSystemPrompt(preferences, format),
     messages:   [{ role: 'user', content: buildUserPrompt(resolvedEmails) }],
   });
