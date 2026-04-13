@@ -81,7 +81,10 @@ app.post('/jobs/reset-processed', async (req, res) => {
 // POST /test/slack — sends a connection confirmation DM.
 app.post('/test/slack', async (req, res) => {
   try {
-    await postSlack('Threadr is connected. Digests will arrive at 8:00 AM and 8:00 PM IST.');
+    await postSlack({
+      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: 'Threadr is connected. Digests will arrive at 8:00 AM and 8:00 PM IST.' } }],
+      fallbackText: 'Threadr is connected.',
+    });
     res.json({ ok: true });
   } catch (err) {
     console.error('[/test/slack]', err);

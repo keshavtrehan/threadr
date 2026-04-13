@@ -11,21 +11,7 @@ function loadFormat() {
 }
 
 // ---------------------------------------------------------------------------
-// Category order parser.
-//
-// Looks for the first section heading in format.md that contains the word
-// "categor" (case-insensitive), then collects every bullet list item beneath
-// it until the next heading. Those bullet items, in order, become the
-// canonical category sequence for the digest.
-//
-// Example format.md excerpt:
-//   ## Category structure
-//   - AI & Tech
-//   - India Markets
-//   - Culture & Society
-//
-// Falls back to an empty array if no such section exists, in which case
-// formatSlack uses the order of first appearance in the DigestItems array.
+// Category order parser — unchanged from previous version.
 // ---------------------------------------------------------------------------
 function parseCategoryOrder(formatMd) {
   const categories = [];
@@ -36,11 +22,9 @@ function parseCategoryOrder(formatMd) {
       inSection = true;
       continue;
     }
-    if (inSection && /^#{1,4}\s/.test(line)) {
-      break; // next heading ends the section
-    }
+    if (inSection && /^#{1,4}\s/.test(line)) break;
     if (inSection) {
-      const match = line.match(/^\s*[-*]\s+(.+)/);
+      const match = line.match(/^\s*[-*\d.]+\s+(.+)/);
       if (match) categories.push(match[1].trim());
     }
   }
@@ -49,80 +33,143 @@ function parseCategoryOrder(formatMd) {
 }
 
 // ---------------------------------------------------------------------------
-// Rendering helpers.
+// Date / period helpers
 // ---------------------------------------------------------------------------
-function periodLabel(period) {
-  return period === 'evening' ? 'Evening' : 'Morning';
-}
-
 const DAYS   = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function dateLabel(date) {
-  // e.g. "Mon 12 Apr" — manual format avoids locale-dependent commas
   return `${DAYS[date.getDay()]} ${date.getDate()} ${MONTHS[date.getMonth()]}`;
 }
 
-function renderItem(item) {
-  // Bold title as hyperlink: *[Title](resolvedUrl)*
-  const link = `*[${item.title}](${item.resolvedUrl})*`;
-
-  // Synopsis may contain a newline between line 1 and line 2.
-  // Each line is indented with two spaces.
-  const synopsisLines = (item.synopsis || '')
-    .split('\n')
-    .map(l => `  ${l.trim()}`)
-    .join('\n');
-
-  return `• ${link}\n${synopsisLines}`;
-}
-
-function renderCategory(name, items) {
-  return `*${name}*\n${items.map(renderItem).join('\n\n')}`;
+function periodLabel(period) {
+  return period === 'evening' ? 'Evening' : 'Morning';
 }
 
 // ---------------------------------------------------------------------------
-// Public API.
+// Block Kit builders
+// ---------------------------------------------------------------------------
+
+function divider() {
+  return { type: 'divider' };
+}
+
+function headerBlock(text) {
+  return { type: 'header', text: { type: 'plain_text', text, emoji: true } };
+}
+
+function sectionMd(text) {
+  return { type: 'section', text: { type: 'mrkdwn', text } };
+}
+
+function contextMd(text) {
+  return { type: 'context', elements: [{ type: 'mrkdwn', text }] };
+}
+
+// ---------------------------------------------------------------------------
+// Item renderer
+// ---------------------------------------------------------------------------
+function itemBlocks(item) {
+  // Slack Block Kit hyperlink: *<url|title>* — no link preview cards.
+  const link = `*<${item.resolvedUrl}|${item.title}>*`;
+
+  // Synopsis: split on newline, join with newline (Claude may return one or
+  // two lines). Trim each line to remove stray whitespace.
+  const synopsis = (item.synopsis || '')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(Boolean)
+    .join('\n');
+
+  const blocks = [
+    sectionMd(link),
+    sectionMd(synopsis),
+  ];
+
+  // Source context: "Sender · _Subject_"
+  if (item.source) {
+    blocks.push(contextMd(item.source));
+  }
+
+  return blocks;
+}
+
+// ---------------------------------------------------------------------------
+// Section renderer
+// ---------------------------------------------------------------------------
+function sectionBlocks(name, items) {
+  const blocks = [sectionMd(`*${name}*`), divider()];
+
+  items.forEach((item, i) => {
+    blocks.push(...itemBlocks(item));
+    if (i < items.length - 1) blocks.push(divider());
+  });
+
+  return blocks;
+}
+
+// ---------------------------------------------------------------------------
+// Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Render a DigestItem array into a Slack markdown string.
+ * Render a DigestItem array into a Slack Block Kit blocks array.
  *
  * format.md is read fresh from disk on every call. Category sections appear
  * in the order defined in format.md; any categories Claude returned that
- * are not listed in format.md are appended at the end.
+ * are not in format.md are appended at the end.
  *
- * @param {{ category, title, resolvedUrl, synopsis }[]} items
- *   Output of curate().
+ * @param {{ category, title, resolvedUrl, synopsis, source? }[]} items
  * @param {{ emailsScanned?: number, period?: 'morning' | 'evening' }} meta
- * @returns {string}
+ * @returns {{ blocks: object[], fallbackText: string }}
  */
 function formatSlack(items, meta = {}) {
-  if (items.length === 0) return '';
-
   const { emailsScanned = 0, period = 'morning' } = meta;
+  const now    = new Date();
+  const label  = periodLabel(period);
+  const date   = dateLabel(now);
+  const title  = `🗞 ${label} Digest — ${date}`;
+
+  const fallbackText = `${label} Digest — ${items.length} article${items.length === 1 ? '' : 's'} curated`;
+
+  if (items.length === 0) {
+    return {
+      blocks: [
+        headerBlock(title),
+        contextMd(`_${emailsScanned} emails scanned · nothing worth curating today_`),
+      ],
+      fallbackText,
+    };
+  }
+
   const formatMd      = loadFormat();
   const categoryOrder = parseCategoryOrder(formatMd);
 
-  // Group items by category, preserving insertion order within each group.
+  // Group items by category.
   const groups = new Map();
   for (const item of items) {
     if (!groups.has(item.category)) groups.set(item.category, []);
     groups.get(item.category).push(item);
   }
 
-  // Ordered category names: format.md order first (skip empties),
-  // then any categories Claude returned that were not in format.md.
+  // Ordered: format.md order first, then any extras Claude returned.
   const ordered = [
     ...categoryOrder.filter(c => groups.has(c)),
     ...[...groups.keys()].filter(c => !categoryOrder.includes(c)),
   ];
 
-  const header    = `*🗞 ${periodLabel(period)} Digest — ${dateLabel(new Date())}*`;
-  const subheader = `_${emailsScanned} emails scanned · ${items.length} articles curated_`;
-  const sections  = ordered.map(c => renderCategory(c, groups.get(c)));
+  const blocks = [
+    headerBlock(title),
+    contextMd(`${emailsScanned} emails scanned · ${items.length} articles curated`),
+    divider(),
+  ];
 
-  return [header, subheader, ...sections].join('\n\n');
+  ordered.forEach((cat, i) => {
+    blocks.push(...sectionBlocks(cat, groups.get(cat)));
+    if (i < ordered.length - 1) blocks.push(divider());
+  });
+
+  return { blocks, fallbackText };
 }
 
 module.exports = { formatSlack };

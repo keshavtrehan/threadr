@@ -131,21 +131,12 @@ async function runDigest() {
     // ── Step 7: Format + post to Slack ────────────────────────────────────
     console.log('[digest] 7/8  Formatting and posting to Slack...');
 
-    let slackText;
+    const slackPayload = formatSlack(digestItems, { emailsScanned: emails.length, period });
     if (digestItems.length === 0) {
-      // Claude found nothing worth curating — send a brief notice instead of silence.
-      const DAYS   = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const now    = new Date();
-      const date   = `${DAYS[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()]}`;
-      const label  = period === 'evening' ? 'Evening' : 'Morning';
-      slackText = `*🗞 ${label} Dispatch — ${date}*\n_${emails.length} emails scanned · nothing worth curating today_`;
       console.log('[digest]      0 items curated — sending empty-run notice.');
-    } else {
-      slackText = formatSlack(digestItems, { emailsScanned: emails.length, period });
     }
 
-    await postSlack(slackText);
+    await postSlack(slackPayload);
     console.log('[digest]      Slack DM sent.');
 
     // ── Step 8: Persist to Supabase ────────────────────────────────────────

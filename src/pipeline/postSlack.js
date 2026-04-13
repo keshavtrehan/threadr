@@ -1,33 +1,26 @@
-const slackApp = require('../lib/slack');
+const { WebClient } = require('@slack/web-api');
 
 /**
- * Open a DM channel to SLACK_USER_ID and post a message.
- * Uses the Bolt app's underlying Web API client.
+ * Post a Block Kit message as a DM to SLACK_USER_ID.
  *
- * @param {string} text  Slack markdown string to send.
+ * @param {{ blocks: object[], fallbackText: string }} payload
+ *   Output of formatSlack().
  */
-async function postSlack(text) {
+async function postSlack({ blocks, fallbackText }) {
   const userId = process.env.SLACK_USER_ID;
   if (!userId) throw new Error('[postSlack] SLACK_USER_ID is not set.');
 
-  const client = slackApp.client;
-
-  // Open (or reuse) a DM channel with the target user.
-  const openRes = await client.conversations.open({ users: userId });
-  const channelId = openRes.channel?.id;
-
-  if (!channelId) {
-    throw new Error(`[postSlack] Failed to open DM channel with user ${userId}.`);
-  }
+  const client = new WebClient(process.env.SLACK_BOT_TOKEN);
 
   await client.chat.postMessage({
-    channel: channelId,
-    text,
-    // unfurl_links / unfurl_media kept at Slack defaults (true).
-    // Disable if digest links generate noisy previews.
+    channel:      userId,  // Slack accepts a user ID directly for DMs
+    text:         fallbackText,
+    blocks,
+    unfurl_links: false,
+    unfurl_media: false,
   });
 
-  console.log(`[postSlack] Message posted to DM channel ${channelId} (user ${userId}).`);
+  console.log(`[postSlack] Digest posted to DM (user ${userId}).`);
 }
 
 module.exports = { postSlack };
