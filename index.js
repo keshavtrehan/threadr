@@ -4,6 +4,7 @@ const express = require('express');
 const gmailAuthRouter = require('./src/auth/gmail');
 const { runDigest }   = require('./src/jobs/digest');
 const { postSlack }   = require('./src/pipeline/postSlack');
+const supabase        = require('./src/lib/supabase');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -49,6 +50,28 @@ app.post('/jobs/digest', async (req, res) => {
   if (!result.ok) {
     console.error('[/jobs/digest] Job finished with error:', result.error);
   }
+});
+
+// POST /jobs/reset-processed
+// Deletes all rows from processed_emails — forces a full inbox re-scan on
+// the next run. For testing only. Protected by CRON_SECRET header.
+app.post('/jobs/reset-processed', async (req, res) => {
+  if (req.headers['x-cron-secret'] !== process.env.CRON_SECRET) {
+    return res.status(401).json({ ok: false, error: 'Unauthorised.' });
+  }
+
+  const { error, count } = await supabase
+    .from('processed_emails')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000'); // delete all rows
+
+  if (error) {
+    console.error('[/jobs/reset-processed]', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  console.log(`[/jobs/reset-processed] Cleared processed_emails (${count ?? 'unknown'} rows deleted).`);
+  res.json({ ok: true, deleted: count ?? 'unknown' });
 });
 
 // ---------------------------------------------------------------------------

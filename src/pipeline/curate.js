@@ -32,14 +32,28 @@ function stripFences(text) {
     .trim();
 }
 
+function extractJsonArray(text) {
+  // Find the first [ and the last ] and extract only that slice.
+  // Discards any explanatory text Claude appends after the closing bracket.
+  const start = text.indexOf('[');
+  const end   = text.lastIndexOf(']');
+  if (start === -1 || end === -1 || end < start) return null;
+  return text.slice(start, end + 1);
+}
+
 function parseDigestItems(raw) {
-  const text = stripFences(raw.trim());
+  const stripped  = stripFences(raw.trim());
+  const jsonSlice = extractJsonArray(stripped);
+
+  if (!jsonSlice) {
+    throw new Error(`[curate] No JSON array found in Claude response.\n\nRaw response:\n${stripped}`);
+  }
 
   let parsed;
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(jsonSlice);
   } catch (err) {
-    throw new Error(`[curate] Claude response is not valid JSON: ${err.message}\n\nRaw response:\n${text}`);
+    throw new Error(`[curate] Claude response is not valid JSON: ${err.message}\n\nExtracted slice:\n${jsonSlice}`);
   }
 
   if (!Array.isArray(parsed)) {
