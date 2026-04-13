@@ -8,7 +8,7 @@ async function getGot() {
   return _got;
 }
 
-const TIMEOUT_MS = 5000;
+const TIMEOUT_MS = 3000;
 const MAX_REDIRECTS = 10;
 
 // Query parameters to strip from resolved URLs (tracking / campaign params).

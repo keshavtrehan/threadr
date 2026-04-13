@@ -14,7 +14,7 @@ async function getGot() {
 
 const FETCH_TIMEOUT_MS = 8000;
 const MAX_RETRIES      = 2;
-const MAX_CANDIDATES   = 5;
+const MAX_CANDIDATES   = 3;
 const CONCURRENCY      = 5;
 
 // ~4 chars per token is a conservative estimate; 1,200 tokens ≈ 4,800 chars.

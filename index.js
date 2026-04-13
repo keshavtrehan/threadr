@@ -11,6 +11,15 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
 // ---------------------------------------------------------------------------
+// Health
+// ---------------------------------------------------------------------------
+
+// GET /health — used by Railway to confirm the process is alive.
+// Must respond quickly and always return 200 so health checks never
+// interrupt a long-running background digest job.
+app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+
+// ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
 
