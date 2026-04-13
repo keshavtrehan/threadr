@@ -1,11 +1,10 @@
-const supabase                  = require('../lib/supabase');
-const { fetchEmails }           = require('../pipeline/fetchEmails');
-const { extractLinksFromEmails} = require('../pipeline/extractLinks');
-const { resolveAllLinks }       = require('../pipeline/resolveLinks');
-const { fetchArticles }         = require('../pipeline/fetchArticles');
-const { curate }                = require('../pipeline/curate');
-const { formatSlack }           = require('../pipeline/formatSlack');
-const { postSlack }             = require('../pipeline/postSlack');
+const supabase                   = require('../lib/supabase');
+const { fetchEmails }            = require('../pipeline/fetchEmails');
+const { extractLinksFromEmails } = require('../pipeline/extractLinks');
+const { resolveAllLinks }        = require('../pipeline/resolveLinks');
+const { curate }                 = require('../pipeline/curate');
+const { formatSlack }            = require('../pipeline/formatSlack');
+const { postSlack }              = require('../pipeline/postSlack');
 
 // IST = UTC + 5:30
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -19,8 +18,6 @@ function detectPeriod() {
   return istHour < 12 ? 'morning' : 'evening';
 }
 
-// Fetch message IDs already in processed_emails, scoped to the last 7 days
-// (well beyond the 24h Gmail query window — avoids a full-table scan).
 async function loadProcessedIds() {
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -67,8 +64,7 @@ async function writeProcessedEmails(runId, emails) {
 // ---------------------------------------------------------------------------
 
 /**
- * Run a full digest cycle: fetch → extract → resolve → fetch articles →
- * curate → format → post → persist.
+ * Run a full digest cycle: fetch → extract → resolve → curate → format → post → persist.
  *
  * Never throws — errors are caught, written to digest_runs, and returned
  * as { ok: false, error } so the Express route can respond cleanly.
@@ -78,21 +74,19 @@ async function writeProcessedEmails(runId, emails) {
 async function runDigest() {
   const period = detectPeriod();
 
-  // Accumulate partial counts so the error record is as complete as possible.
   let emails      = [];
-  let articles    = [];
   let digestItems = [];
 
   console.log(`\n[digest] ── Starting ${period} digest run ──`);
 
   try {
     // ── Step 1: Load processed IDs (idempotency) ──────────────────────────
-    console.log('[digest] 1/8  Loading processed message IDs from Supabase...');
+    console.log('[digest] 1/6  Loading processed message IDs from Supabase...');
     const processedIds = await loadProcessedIds();
     console.log(`[digest]      ${processedIds.length} previously processed IDs loaded.`);
 
     // ── Step 2: Fetch emails ───────────────────────────────────────────────
-    console.log('[digest] 2/8  Fetching emails from Gmail...');
+    console.log('[digest] 2/6  Fetching emails from Gmail...');
     emails = await fetchEmails(processedIds);
 
     if (emails.length === 0) {
@@ -109,42 +103,34 @@ async function runDigest() {
     }
 
     // ── Step 3: Extract links ──────────────────────────────────────────────
-    console.log(`[digest] 3/8  Extracting links from ${emails.length} emails...`);
-    const extracted      = extractLinksFromEmails(emails);
+    console.log(`[digest] 3/6  Extracting links from ${emails.length} emails...`);
+    const extracted       = extractLinksFromEmails(emails);
     const totalCandidates = extracted.reduce((n, e) => n + e.candidates.length, 0);
     console.log(`[digest]      ${totalCandidates} candidate links extracted.`);
 
     // ── Step 4: Resolve links ──────────────────────────────────────────────
-    console.log('[digest] 4/8  Resolving links to canonical URLs...');
+    console.log('[digest] 4/6  Resolving links to canonical URLs...');
     const resolved = await resolveAllLinks(extracted);
 
-    // ── Step 5: Fetch articles ─────────────────────────────────────────────
-    console.log('[digest] 5/8  Fetching article content...');
-    articles = await fetchArticles(resolved);
-    console.log(`[digest]      ${articles.length} articles fetched.`);
-
-    // ── Step 6: Curate with Claude ─────────────────────────────────────────
-    console.log('[digest] 6/8  Curating digest with Claude...');
-    digestItems = await curate(articles);
+    // ── Step 5: Curate with Claude ─────────────────────────────────────────
+    console.log('[digest] 5/6  Curating digest with Claude...');
+    digestItems = await curate(resolved);
     console.log(`[digest]      ${digestItems.length} items selected.`);
 
-    // ── Step 7: Format + post to Slack ────────────────────────────────────
-    console.log('[digest] 7/8  Formatting and posting to Slack...');
+    // ── Step 6: Format + post to Slack ────────────────────────────────────
+    console.log('[digest] 6/6  Formatting, posting, and persisting...');
 
     const slackPayload = formatSlack(digestItems, { emailsScanned: emails.length, period });
     if (digestItems.length === 0) {
       console.log('[digest]      0 items curated — sending empty-run notice.');
     }
-
     await postSlack(slackPayload);
     console.log('[digest]      Slack DM sent.');
 
-    // ── Step 8: Persist to Supabase ────────────────────────────────────────
-    console.log('[digest] 8/8  Persisting run data to Supabase...');
     const runId = await writeDigestRun({
       period,
       emails_fetched:   emails.length,
-      articles_fetched: articles.length,
+      articles_fetched: 0,
       items_curated:    digestItems.length,
       status:           'success',
       digest_output:    digestItems,
@@ -156,14 +142,13 @@ async function runDigest() {
     return { ok: true, itemsCurated: digestItems.length };
 
   } catch (err) {
-    console.error(`[digest] ✗ Run failed at step — ${err.message}`, err);
+    console.error(`[digest] ✗ Run failed — ${err.message}`, err);
 
-    // Best-effort error record — don't let a Supabase failure here propagate.
     try {
       await writeDigestRun({
         period,
         emails_fetched:   emails.length,
-        articles_fetched: articles.length,
+        articles_fetched: 0,
         items_curated:    digestItems.length,
         status:           'error',
         error_message:    err.message,

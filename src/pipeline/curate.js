@@ -4,11 +4,9 @@ const Anthropic = require('@anthropic-ai/sdk');
 
 const MODEL = 'claude-haiku-4-5-20251001';
 
-// Paths resolved relative to this file so they work regardless of cwd.
 const PREFERENCES_PATH = path.join(__dirname, '../../config/preferences.md');
 const FORMAT_PATH      = path.join(__dirname, '../../config/format.md');
 
-// Required fields on every DigestItem.
 const REQUIRED_FIELDS = ['category', 'title', 'resolvedUrl', 'synopsis'];
 
 // ---------------------------------------------------------------------------
@@ -21,10 +19,8 @@ function loadConfigFiles() {
 }
 
 // ---------------------------------------------------------------------------
-// Response parsing and validation.
+// Response parsing
 // ---------------------------------------------------------------------------
-
-// Strip markdown fences if Claude adds them despite instructions.
 function stripFences(text) {
   return text
     .replace(/^```(?:json)?\s*/i, '')
@@ -33,8 +29,6 @@ function stripFences(text) {
 }
 
 function extractJsonArray(text) {
-  // Find the first [ and the last ] and extract only that slice.
-  // Discards any explanatory text Claude appends after the closing bracket.
   const start = text.indexOf('[');
   const end   = text.lastIndexOf(']');
   if (start === -1 || end === -1 || end < start) return null;
@@ -60,7 +54,6 @@ function parseDigestItems(raw) {
     throw new Error(`[curate] Claude response parsed but is not an array. Got: ${typeof parsed}`);
   }
 
-  // Validate each item has all required fields and that resolvedUrl is unchanged.
   const invalid = parsed.filter(
     item => REQUIRED_FIELDS.some(f => !item[f] || typeof item[f] !== 'string')
   );
@@ -75,11 +68,11 @@ function parseDigestItems(raw) {
 }
 
 // ---------------------------------------------------------------------------
-// System prompt builder.
+// Prompt builders
 // ---------------------------------------------------------------------------
 function buildSystemPrompt(preferences, format) {
   return `\
-You are a newsletter curation assistant. Your task is to select and curate 7–10 of the most valuable articles from a set of newsletter content fetched from the user's inbox.
+You are a newsletter curation assistant. Your task is to select and curate 8–12 of the most valuable articles from newsletter links found in the user's inbox.
 
 ## Curation preferences
 
@@ -93,57 +86,66 @@ ${format}
 
 Return a valid JSON array of DigestItem objects. Each object must have exactly these fields:
   "category"    — string: the category this article belongs to (defined in Output format above)
-  "title"       — string: the article title
-  "resolvedUrl" — string: copied character-for-character from the input article's resolvedUrl field. Do not modify, reconstruct, shorten, or infer URLs. Use the exact value provided.
+  "title"       — string: the article title (use anchorText if no better title is available)
+  "resolvedUrl" — string: copied character-for-character from the candidate's resolvedUrl field. Do not modify, reconstruct, shorten, or infer URLs. Use the exact value provided.
   "synopsis"    — string: the two-line synopsis as defined in Output format
 
 Rules:
 - Return ONLY the raw JSON array. No markdown fences. No explanation. No preamble. No trailing text.
 - The first character of your response must be \`[\` and the last must be \`]\`.
-- If fewer than 7 strong articles exist, return what is available — do not pad with weak content.
+- If fewer than 8 strong candidates exist, return what is available — do not pad with weak content.
 - Every resolvedUrl must be taken verbatim from the input. Never construct or guess a URL.`;
 }
 
-// ---------------------------------------------------------------------------
-// User prompt builder.
-// ---------------------------------------------------------------------------
-function buildUserPrompt(articles) {
-  return `Here are the articles fetched from today's newsletters. Select and curate the best 7–10.\n\n${JSON.stringify(articles, null, 2)}`;
+function buildUserPrompt(resolvedEmails) {
+  // Shape passed to Claude: candidates grouped by email, metadata-only.
+  const input = resolvedEmails
+    .filter(e => e.candidates.length > 0)
+    .map(e => ({
+      senderName:   e.senderName,
+      emailSubject: e.emailSubject,
+      candidates:   e.candidates.map(c => ({
+        anchorText:        c.anchorText,
+        surroundingSnippet: c.surroundingSnippet,
+        resolvedUrl:       c.resolvedUrl,
+      })),
+    }));
+
+  return `Here are the newsletter candidates from today's inbox, grouped by email. Select and curate the best 8–12.\n\n${JSON.stringify(input, null, 2)}`;
 }
 
 // ---------------------------------------------------------------------------
-// Public API.
+// Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Curate a digest from fetched articles using Claude Haiku.
+ * Curate a digest from resolved email links using Claude Haiku.
  *
- * Config files are read fresh from disk on every call — edits to
- * preferences.md or format.md take effect on the next run without
- * requiring a redeploy.
+ * Input is the output of resolveAllLinks — candidates grouped by email,
+ * each carrying senderName, emailSubject, anchorText, surroundingSnippet,
+ * and resolvedUrl. No article bodies are fetched or passed.
  *
- * @param {{ title, resolvedUrl, body, source, fallbackUsed }[]} articles
- *   Output of fetchArticles.
+ * @param {{ senderName, emailSubject, candidates }[]} resolvedEmails
  * @returns {Promise<{ category, title, resolvedUrl, synopsis }[]>}
  */
-async function curate(articles) {
-  if (articles.length === 0) {
-    console.warn('[curate] No articles to curate — returning empty digest.');
+async function curate(resolvedEmails) {
+  const totalCandidates = resolvedEmails.reduce((n, e) => n + e.candidates.length, 0);
+
+  if (totalCandidates === 0) {
+    console.warn('[curate] No candidates to curate — returning empty digest.');
     return [];
   }
 
   const { preferences, format } = loadConfigFiles();
   const client = new Anthropic();
 
-  console.log(`[curate] Sending ${articles.length} articles to Claude (${MODEL}).`);
+  console.log(`[curate] Sending ${totalCandidates} candidates from ${resolvedEmails.length} emails to Claude (${MODEL}).`);
 
   const message = await client.messages.create({
-    model: MODEL,
+    model:      MODEL,
     max_tokens: 2048,
-    system: buildSystemPrompt(preferences, format),
-    messages: [
-      { role: 'user', content: buildUserPrompt(articles) },
-    ],
+    system:     buildSystemPrompt(preferences, format),
+    messages:   [{ role: 'user', content: buildUserPrompt(resolvedEmails) }],
   });
 
   const raw = message.content

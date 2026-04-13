@@ -63,14 +63,13 @@ function shouldExclude(anchorText, href) {
  * Extract candidate links from a single email.
  *
  * @param {{ messageId, subject, sender, htmlBody }} email
- * @returns {{ source: string, candidates: { anchorText, rawUrl, surroundingSnippet }[] }}
+ * @returns {{ senderName, emailSubject, candidates: { anchorText, rawUrl, surroundingSnippet }[] }}
  */
 function extractLinks(email) {
   const { sender, subject, htmlBody } = email;
-  const source = sender || subject || 'unknown';
 
   if (!htmlBody) {
-    return { source, candidates: [] };
+    return { senderName: sender, emailSubject: subject, candidates: [] };
   }
 
   const cleaned = stripBoilerplate(htmlBody);
@@ -101,14 +100,14 @@ function extractLinks(email) {
     return true;
   });
 
-  return { source, candidates: unique };
+  return { senderName: sender, emailSubject: subject, candidates: unique };
 }
 
 /**
  * Run extractLinks over an array of emails (output of fetchEmails).
  *
  * @param {object[]} emails
- * @returns {{ source, candidates }[]}
+ * @returns {{ senderName, emailSubject, candidates }[]}
  */
 function extractLinksFromEmails(emails) {
   return emails.map(extractLinks);
