@@ -1,4 +1,4 @@
-const { JSDOM } = require('jsdom');
+const { JSDOM, VirtualConsole } = require('jsdom');
 const { Readability } = require('@mozilla/readability');
 const cheerio = require('cheerio');
 
@@ -19,7 +19,9 @@ const SOCIAL_HOMEPAGE = /^https?:\/\/(www\.)?(twitter|x|linkedin|instagram|faceb
  */
 function stripBoilerplate(html, url = 'https://newsletter.invalid') {
   try {
-    const dom = new JSDOM(html, { url });
+    const virtualConsole = new VirtualConsole();
+    virtualConsole.on('error', () => {});
+    const dom = new JSDOM(html, { url, virtualConsole });
     const reader = new Readability(dom.window.document, { keepClasses: false });
     const article = reader.parse();
     return article?.content || html;

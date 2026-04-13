@@ -1,4 +1,4 @@
-const { JSDOM } = require('jsdom');
+const { JSDOM, VirtualConsole } = require('jsdom');
 const { Readability } = require('@mozilla/readability');
 const cheerio = require('cheerio');
 
@@ -14,7 +14,7 @@ async function getGot() {
 
 const FETCH_TIMEOUT_MS = 8000;
 const MAX_RETRIES      = 2;
-const MAX_CANDIDATES   = 2;
+const MAX_CANDIDATES   = 1;
 const CONCURRENCY      = 5;
 
 // ~4 chars per token is a conservative estimate; 1,200 tokens ≈ 4,800 chars.
@@ -85,7 +85,9 @@ async function fetchWithRetry(got, url) {
 // ---------------------------------------------------------------------------
 function extractArticleBody(html, url) {
   try {
-    const dom = new JSDOM(html, { url });
+    const virtualConsole = new VirtualConsole();
+    virtualConsole.on('error', () => {});
+    const dom = new JSDOM(html, { url, virtualConsole });
     const reader = new Readability(dom.window.document);
     const article = reader.parse();
     if (article?.textContent?.trim().length > 100) {

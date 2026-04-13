@@ -1,7 +1,7 @@
 const { getGmailClient } = require('../lib/gmail');
 
 const MAX_EMAILS    = 50; // how many IDs to request from Gmail (buffer for already-processed)
-const MAX_PROCESSED = 20; // hard cap on emails actually processed per run
+const MAX_PROCESSED = 15; // hard cap on emails actually processed per run
 const WINDOW_MS  = 12 * 60 * 60 * 1000; // 12 hours in milliseconds
 
 // ---------------------------------------------------------------------------
