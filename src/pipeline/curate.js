@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
 
-const MODEL = 'claude-sonnet-4-5-20251022';
+const MODEL = 'claude-sonnet-4-5';
 
 const PREFERENCES_PATH = path.join(__dirname, '../../config/preferences.md');
 const FORMAT_PATH      = path.join(__dirname, '../../config/format.md');
