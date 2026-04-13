@@ -1,6 +1,7 @@
 const { getGmailClient } = require('../lib/gmail');
 
-const MAX_EMAILS = 60;
+const MAX_EMAILS    = 50; // how many IDs to request from Gmail (buffer for already-processed)
+const MAX_PROCESSED = 20; // hard cap on emails actually processed per run
 const WINDOW_MS  = 12 * 60 * 60 * 1000; // 12 hours in milliseconds
 
 // ---------------------------------------------------------------------------
@@ -70,22 +71,33 @@ async function fetchEmails(processedIds = []) {
     maxResults: MAX_EMAILS,
   });
 
-  const messages = listRes.data.messages || [];
+  // Gmail returns IDs in reverse-chronological order (most recent first).
+  const allMessages = listRes.data.messages || [];
 
-  if (messages.length === MAX_EMAILS) {
-    console.warn(`[fetchEmails] Cap of ${MAX_EMAILS} emails hit — some may be deferred to the next run.`);
-  }
-
-  if (messages.length === 0) {
+  if (allMessages.length === 0) {
     console.log('[fetchEmails] No emails found in the inbox for the last 24h.');
     return [];
   }
 
-  // Fetch full message data for each ID in parallel, skipping already-processed.
-  const settled = await Promise.all(
-    messages.map(async ({ id }) => {
-      if (processed.has(id)) return null;
+  // Exclude already-processed IDs, then cap at MAX_PROCESSED most recent.
+  const unprocessed = allMessages.filter(({ id }) => !processed.has(id));
+  const capped      = unprocessed.slice(0, MAX_PROCESSED);
+  const capSkipped  = unprocessed.length - capped.length;
 
+  if (capSkipped > 0) {
+    console.warn(
+      `[fetchEmails] Cap of ${MAX_PROCESSED} reached — ${capSkipped} unprocessed email(s) deferred to next run.`
+    );
+  }
+
+  if (capped.length === 0) {
+    console.log('[fetchEmails] All inbox emails already processed.');
+    return [];
+  }
+
+  // Fetch full message data for the capped set in parallel.
+  const emails = await Promise.all(
+    capped.map(async ({ id }) => {
       const msgRes = await gmail.users.messages.get({
         userId: 'me',
         id,
@@ -95,8 +107,8 @@ async function fetchEmails(processedIds = []) {
       const msg      = msgRes.data;
       const headers  = msg.payload?.headers || [];
       const ts       = Number(msg.internalDate);
-      const receivedAt    = new Date(ts);
-      const withinWindow  = ts >= windowStart;
+      const receivedAt   = new Date(ts);
+      const withinWindow = ts >= windowStart;
 
       return {
         messageId:    msg.id,
@@ -109,12 +121,9 @@ async function fetchEmails(processedIds = []) {
     })
   );
 
-  // Remove nulls (already-processed emails that were skipped).
-  const emails = settled.filter(Boolean);
-
   const inWindow   = emails.filter(e =>  e.withinWindow).length;
   const stragglers = emails.filter(e => !e.withinWindow).length;
-  const skipped    = messages.length - emails.length;
+  const skipped    = allMessages.length - unprocessed.length;
 
   console.log(
     `[fetchEmails] ${emails.length} emails to process ` +
