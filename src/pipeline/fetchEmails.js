@@ -57,7 +57,7 @@ async function fetchEmails(processedIds = []) {
 
   const listRes = await gmail.users.messages.list({
     userId:     'me',
-    q:          'in:inbox newer_than:1d',
+    q:          'in:inbox newer_than:12h',
     maxResults: GMAIL_MAX_RESULTS,
   });
 
