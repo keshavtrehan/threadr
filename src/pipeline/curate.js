@@ -115,11 +115,54 @@ function buildUserPrompt(resolvedEmails) {
 }
 
 // ---------------------------------------------------------------------------
+// Candidate trimmer
+// ---------------------------------------------------------------------------
+const MAX_CANDIDATES = 150;
+
+/**
+ * Trim resolvedEmails to at most MAX_CANDIDATES total candidates.
+ *
+ * Strategy: rank all candidates across all emails by surroundingSnippet
+ * length descending (longer = more context = better signal), take the top
+ * MAX_CANDIDATES, then rebuild the grouped structure preserving email metadata.
+ * Emails whose candidates were all trimmed are dropped entirely.
+ */
+function trimCandidates(resolvedEmails) {
+  // Flatten with email index so we can re-group later.
+  const flat = resolvedEmails.flatMap((email, emailIdx) =>
+    email.candidates.map(candidate => ({ emailIdx, candidate }))
+  );
+
+  if (flat.length <= MAX_CANDIDATES) return resolvedEmails;
+
+  // Sort by snippet length descending, take top MAX_CANDIDATES.
+  const trimmed = flat
+    .sort((a, b) =>
+      (b.candidate.surroundingSnippet || '').length -
+      (a.candidate.surroundingSnippet || '').length
+    )
+    .slice(0, MAX_CANDIDATES);
+
+  // Re-group by email, preserving senderName / emailSubject.
+  const byEmail = new Map();
+  for (const { emailIdx, candidate } of trimmed) {
+    if (!byEmail.has(emailIdx)) byEmail.set(emailIdx, []);
+    byEmail.get(emailIdx).push(candidate);
+  }
+
+  return [...byEmail.entries()].map(([emailIdx, candidates]) => ({
+    senderName:   resolvedEmails[emailIdx].senderName,
+    emailSubject: resolvedEmails[emailIdx].emailSubject,
+    candidates,
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Curate a digest from resolved email links using Claude Haiku.
+ * Curate a digest from resolved email links using Claude.
  *
  * Input is the output of resolveAllLinks — candidates grouped by email,
  * each carrying senderName, emailSubject, anchorText, surroundingSnippet,
@@ -136,19 +179,26 @@ async function curate(resolvedEmails) {
     return [];
   }
 
+  // Trim to MAX_CANDIDATES before sending to Claude.
+  const trimmedEmails   = trimCandidates(resolvedEmails);
+  const trimmedCount    = trimmedEmails.reduce((n, e) => n + e.candidates.length, 0);
+  if (trimmedCount < totalCandidates) {
+    console.log(`[curate] Trimmed to ${trimmedCount} candidates from ${totalCandidates} total before sending.`);
+  }
+
   const { preferences, format } = loadConfigFiles();
   const client = new Anthropic();
 
-  console.log(`[curate] Sending ${totalCandidates} candidates from ${resolvedEmails.length} emails to Claude (${MODEL}).`);
+  console.log(`[curate] Sending ${trimmedCount} candidates from ${trimmedEmails.length} emails to Claude (${MODEL}).`);
 
-  const userPrompt = buildUserPrompt(resolvedEmails);
+  const userPrompt = buildUserPrompt(trimmedEmails);
   if (process.env.DEBUG_CURATE) {
     console.log('[curate:input]', userPrompt);
   }
 
   const message = await client.messages.create({
     model:      MODEL,
-    max_tokens: 4096,
+    max_tokens: 6000,
     system:     buildSystemPrompt(preferences, format),
     messages:   [{ role: 'user', content: userPrompt }],
   });
