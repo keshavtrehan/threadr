@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const cron    = require('node-cron');
 
 const gmailAuthRouter = require('./src/auth/gmail');
 const { runDigest }   = require('./src/jobs/digest');
@@ -98,4 +99,22 @@ app.post('/test/slack', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Threadr running on port ${PORT}`);
+
+  // 8:00 AM IST (02:30 UTC)
+  cron.schedule('30 2 * * *', () => {
+    console.log('[cron] Firing morning digest');
+    runDigest().catch(err =>
+      console.error('[cron] Morning digest failed:', err.message)
+    );
+  });
+
+  // 8:00 PM IST (14:30 UTC)
+  cron.schedule('30 14 * * *', () => {
+    console.log('[cron] Firing evening digest');
+    runDigest().catch(err =>
+      console.error('[cron] Evening digest failed:', err.message)
+    );
+  });
+
+  console.log('[cron] Scheduled: morning digest at 02:30 UTC, evening digest at 14:30 UTC');
 });
