@@ -35,7 +35,7 @@ app.use(gmailAuthRouter);
 
 // POST /jobs/digest
 // Protected by CRON_SECRET header. Pass ?force=true to bypass (manual runs).
-app.post('/jobs/digest', async (req, res) => {
+app.post('/jobs/digest', (req, res) => {
   const isForced = req.query.force === 'true';
   const secret   = req.headers['x-cron-secret'];
 
@@ -43,14 +43,13 @@ app.post('/jobs/digest', async (req, res) => {
     return res.status(401).json({ ok: false, error: 'Unauthorised — invalid or missing x-cron-secret header.' });
   }
 
-  // Respond immediately so Railway's cron HTTP timeout isn't a concern.
-  // The job runs asynchronously; check Railway logs for outcome.
-  res.json({ ok: true, message: `Digest job started (${isForced ? 'forced' : 'scheduled'}).` });
+  res.json({ ok: true, message: 'Digest job started.' });
 
-  const result = await runDigest();
-  if (!result.ok) {
-    console.error('[/jobs/digest] Job finished with error:', result.error);
-  }
+  setImmediate(() => {
+    runDigest().catch(err =>
+      console.error('[/jobs/digest] Job finished with error:', err.message)
+    );
+  });
 });
 
 // POST /jobs/reset-processed
