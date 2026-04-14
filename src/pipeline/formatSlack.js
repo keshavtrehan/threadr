@@ -1,37 +1,3 @@
-const fs   = require('fs');
-const path = require('path');
-
-const FORMAT_PATH = path.join(__dirname, '../../config/format.md');
-
-// ---------------------------------------------------------------------------
-// Config loading — read from disk on every call, same pattern as curate.js.
-// ---------------------------------------------------------------------------
-function loadFormat() {
-  return fs.readFileSync(FORMAT_PATH, 'utf-8');
-}
-
-// ---------------------------------------------------------------------------
-// Category order parser — unchanged from previous version.
-// ---------------------------------------------------------------------------
-function parseCategoryOrder(formatMd) {
-  const categories = [];
-  let inSection = false;
-
-  for (const line of formatMd.split('\n')) {
-    if (/^#{1,4}\s+.*categor/i.test(line)) {
-      inSection = true;
-      continue;
-    }
-    if (inSection && /^#{1,4}\s/.test(line)) break;
-    if (inSection) {
-      const match = line.match(/^\s*[-*\d.]+\s+(.+)/);
-      if (match) categories.push(match[1].trim());
-    }
-  }
-
-  return categories;
-}
-
 // ---------------------------------------------------------------------------
 // Date / period helpers
 // ---------------------------------------------------------------------------
@@ -42,14 +8,16 @@ function dateLabel(date) {
   return `${DAYS[date.getDay()]} ${date.getDate()} ${MONTHS[date.getMonth()]}`;
 }
 
-function periodLabel(period) {
-  return period === 'evening' ? 'Evening' : 'Morning';
+function digestTitle(period) {
+  const date = dateLabel(new Date());
+  return period === 'evening'
+    ? `🗞 Evening Dispatch — ${date}`
+    : `🗞 Morning Digest — ${date}`;
 }
 
 // ---------------------------------------------------------------------------
-// Block Kit builders
+// Block Kit primitives
 // ---------------------------------------------------------------------------
-
 function divider() {
   return { type: 'divider' };
 }
@@ -67,45 +35,28 @@ function contextMd(text) {
 }
 
 // ---------------------------------------------------------------------------
-// Item renderer
+// Item renderer — flat numbered list, no category grouping
 // ---------------------------------------------------------------------------
-function itemBlocks(item) {
-  // Slack Block Kit hyperlink: *<url|title>* — no link preview cards.
-  const link = `*<${item.resolvedUrl}|${item.title}>*`;
+function itemBlocks(item, n) {
+  // "*1.* 🤖  *<url|title>*"
+  const link = `*${n}.* ${item.emoji}  *<${item.resolvedUrl}|${item.title}>*`;
 
-  // Synopsis: split on newline, join with newline (Claude may return one or
-  // two lines). Trim each line to remove stray whitespace.
+  // "senderName · _emailSubject_"
+  const source = `${item.senderName} · _${item.emailSubject}_`;
+
+  // Synopsis: trim each line, filter blanks, rejoin with newline.
   const synopsis = (item.synopsis || '')
     .split('\n')
     .map(l => l.trim())
     .filter(Boolean)
     .join('\n');
 
-  const blocks = [
+  return [
     sectionMd(link),
+    contextMd(source),
     sectionMd(synopsis),
+    divider(),
   ];
-
-  // Source context: "Sender · _Subject_"
-  if (item.source) {
-    blocks.push(contextMd(item.source));
-  }
-
-  return blocks;
-}
-
-// ---------------------------------------------------------------------------
-// Section renderer
-// ---------------------------------------------------------------------------
-function sectionBlocks(name, items) {
-  const blocks = [sectionMd(`*${name}*`), divider()];
-
-  items.forEach((item, i) => {
-    blocks.push(...itemBlocks(item));
-    if (i < items.length - 1) blocks.push(divider());
-  });
-
-  return blocks;
 }
 
 // ---------------------------------------------------------------------------
@@ -113,24 +64,20 @@ function sectionBlocks(name, items) {
 // ---------------------------------------------------------------------------
 
 /**
- * Render a DigestItem array into a Slack Block Kit blocks array.
+ * Render a DigestItem array into a Slack Block Kit payload.
  *
- * format.md is read fresh from disk on every call. Category sections appear
- * in the order defined in format.md; any categories Claude returned that
- * are not in format.md are appended at the end.
+ * Flat numbered list in the order Claude returned items — no category
+ * grouping, no format.md parsing needed.
  *
- * @param {{ category, title, resolvedUrl, synopsis, source? }[]} items
+ * @param {{ title, resolvedUrl, synopsis, emoji, senderName, emailSubject }[]} items
  * @param {{ emailsScanned?: number, period?: 'morning' | 'evening' }} meta
  * @returns {{ blocks: object[], fallbackText: string }}
  */
 function formatSlack(items, meta = {}) {
   const { emailsScanned = 0, period = 'morning' } = meta;
-  const now    = new Date();
-  const label  = periodLabel(period);
-  const date   = dateLabel(now);
-  const title  = `🗞 ${label} Digest — ${date}`;
-
-  const fallbackText = `${label} Digest — ${items.length} article${items.length === 1 ? '' : 's'} curated`;
+  const title       = digestTitle(period);
+  const label       = period === 'evening' ? 'Evening Dispatch' : 'Morning Digest';
+  const fallbackText = `${label} — ${items.length} article${items.length === 1 ? '' : 's'} curated`;
 
   if (items.length === 0) {
     return {
@@ -142,31 +89,14 @@ function formatSlack(items, meta = {}) {
     };
   }
 
-  const formatMd      = loadFormat();
-  const categoryOrder = parseCategoryOrder(formatMd);
-
-  // Group items by category.
-  const groups = new Map();
-  for (const item of items) {
-    if (!groups.has(item.category)) groups.set(item.category, []);
-    groups.get(item.category).push(item);
-  }
-
-  // Ordered: format.md order first, then any extras Claude returned.
-  const ordered = [
-    ...categoryOrder.filter(c => groups.has(c)),
-    ...[...groups.keys()].filter(c => !categoryOrder.includes(c)),
-  ];
-
   const blocks = [
     headerBlock(title),
-    contextMd(`${emailsScanned} emails scanned · ${items.length} articles curated`),
+    contextMd(`_${emailsScanned} emails scanned · ${items.length} articles curated_`),
     divider(),
   ];
 
-  ordered.forEach((cat, i) => {
-    blocks.push(...sectionBlocks(cat, groups.get(cat)));
-    if (i < ordered.length - 1) blocks.push(divider());
+  items.forEach((item, i) => {
+    blocks.push(...itemBlocks(item, i + 1));
   });
 
   return { blocks, fallbackText };

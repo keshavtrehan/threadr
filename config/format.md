@@ -1,87 +1,65 @@
 # Output format
 
 ## Response format
-Return a valid JSON array only. No preamble, no explanation, 
-no markdown fences. The first character of your response 
-must be [ and the last must be ].
+Return a valid JSON array only. No preamble, no explanation,
+no markdown fences. First character must be [ last must be ].
 
 ## DigestItem schema
-Each item in the array must have exactly these fields:
-
 {
-  "category": "AI",
-  "title": "Article title as it appears or a clean version of it",
-  "resolvedUrl": "canonical URL copied character-for-character",
+  "title": "Article title",
+  "resolvedUrl": "canonical URL — copy exactly, never modify",
   "synopsis": "Line 1: what this is about.\nLine 2: why you should read it.",
-  "senderName": "Name of the newsletter or sender",
-  "emailSubject": "Subject line of the email this came from"
+  "senderName": "Newsletter or sender name",
+  "emailSubject": "Subject line of the email",
+  "emoji": "single emoji that best represents the article topic"
 }
 
-Fields are mandatory. Never omit any field. Never modify 
-resolvedUrl — copy it exactly as provided.
+## Emoji guide for Claude
+Assign one emoji per article based on topic:
+🤖 AI, models, machine learning
+💼 B2B, SaaS, enterprise software
+📈 Financial markets, investing, stocks
+🏦 Economy, macro, policy, RBI, Fed
+🇮🇳 India-specific business or startup news
+🌍 Geopolitics, world news
+🚀 Startups, funding, venture capital
+🛒 Consumer tech, e-commerce, retail
+⚡ Energy, climate, sustainability
+🧠 Ideas, essays, opinion, culture
+🔐 Cybersecurity, privacy
+📱 Consumer products, gadgets
 
-## Slack message structure
-
-### Header
-*🗞 Morning Digest — Mon 13 Apr*
+## Digest header
+*🗞 Morning Digest — Mon 14 Apr*
 or
-*🗞 Evening Dispatch — Mon 13 Apr*
+*🗞 Evening Dispatch — Tue 14 Apr*
 
-Use "Morning Digest" for AM runs and "Evening Dispatch" 
-for PM runs. Day format: Mon 13 Apr (no comma, no year).
+Second line in italics:
+_39 emails scanned · 11 articles curated_
 
-Second line in italics immediately below:
-_26 emails scanned · 9 articles curated_
+## Item format
+Flat numbered list. No section headers. No grouping.
+Ranked by importance — most important first.
 
-One blank line after the header before the first section.
+1. emoji *<resolvedUrl|Article title>*
+   senderName · _emailSubject_
+   Line 1 of synopsis.
+   Line 2 of synopsis.
 
-### Section headers
-Each section uses an emoji and bold name. Use these exactly:
+2. emoji *<resolvedUrl|Article title>*
+   ...
 
-🤖 *AI*
-💼 *Business & Technology*
-📈 *Financial Markets*
-🌍 *Economy & World*
-🌐 *Internet & Culture*
+## Synopsis rules
+- 2 lines maximum
+- Line 1: what the article is about — specific, one sentence
+- Line 2: why you should read it — the angle, the stakes,
+  the insight. Be direct and opinionated.
+- Never start with "In this article", "The author", "This piece"
+- Write like a trusted researcher briefing a busy founder
 
-Two blank lines before each new section header.
-One blank line between the section header and the first item.
-
-### Item format
-Each item must follow this structure exactly:
-
-- *[Article title](resolvedUrl)*
-  [senderName] · _[emailSubject]_
-  What this article is about — specific, one sentence.
-  Why you should read it — the angle, the stakes, the insight.
-
-Rules:
-- Title is bold and hyperlinked using *[Title](url)* format
-- Plain hyperlink only — no angle brackets, no URL expansion
-- Source line: sender name · email subject in italics
-- Synopsis is exactly 2 lines, no more
-- Both synopsis lines are indented with 2 spaces
-- Line 1: factual and specific — what the article covers
-- Line 2: why it matters — direct, no filler phrases
-- Never begin a synopsis line with: "In this article", 
-  "The author argues", "This piece explores", "A look at"
-- One blank line between items within the same section
-
-### Example item
-- *[India's AI Policy Shift Could Reshape Enterprise Adoption](https://example.com/article)*
-  The Ken · _India's AI moment — what the policy actually says_
-  The Indian government has quietly updated its AI regulatory 
-  framework, creating new compliance requirements for enterprise 
-  deployments above a certain scale.
-  This is the clearest signal yet that India is moving from 
-  observation to regulation — founders building AI products 
-  for Indian enterprise need to read this now.
-
-## Critical constraints
-- Never display raw URLs as plain text
-- Plain hyperlinks only — title linked, no URL shown
-- No emoji anywhere except on section headers
-- No code blocks or backticks in the output
-- No trailing blank lines at the end of the message
-- Sections must appear in priority order as listed above
-- Skip a section entirely if no items were selected for it
+## Constraints
+- No section headers or category grouping
+- Flat list only, ranked by importance
+- 8-12 items per digest
+- Never modify resolvedUrl
+- One emoji per item, chosen from the guide above

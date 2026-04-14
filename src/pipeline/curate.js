@@ -7,7 +7,7 @@ const MODEL = 'claude-sonnet-4-5';
 const PREFERENCES_PATH = path.join(__dirname, '../../config/preferences.md');
 const FORMAT_PATH      = path.join(__dirname, '../../config/format.md');
 
-const REQUIRED_FIELDS = ['category', 'title', 'resolvedUrl', 'synopsis'];
+const REQUIRED_FIELDS = ['title', 'resolvedUrl', 'synopsis', 'emoji', 'senderName', 'emailSubject'];
 
 // ---------------------------------------------------------------------------
 // Config loading — read from disk on every call, never cached.
@@ -85,10 +85,12 @@ ${format}
 ---
 
 Return a valid JSON array of DigestItem objects. Each object must have exactly these fields:
-  "category"    — string: the category this article belongs to (defined in Output format above)
-  "title"       — string: the article title (use anchorText if no better title is available)
-  "resolvedUrl" — string: copied character-for-character from the candidate's resolvedUrl field. Do not modify, reconstruct, shorten, or infer URLs. Use the exact value provided.
-  "synopsis"    — string: the two-line synopsis as defined in Output format
+  "title"        — string: the article title (use anchorText if no better title is available)
+  "resolvedUrl"  — string: copied character-for-character from the candidate's resolvedUrl field. Do not modify, reconstruct, shorten, or infer URLs. Use the exact value provided.
+  "synopsis"     — string: two-line synopsis as defined in Output format, lines separated by \n
+  "emoji"        — string: single emoji representing the article topic, chosen from the guide in Output format
+  "senderName"   — string: copied from the candidate's senderName
+  "emailSubject" — string: copied from the candidate's emailSubject
 
 Rules:
 - Return ONLY the raw JSON array. No markdown fences. No explanation. No preamble. No trailing text.
