@@ -141,17 +141,26 @@ async function curate(resolvedEmails) {
 
   console.log(`[curate] Sending ${totalCandidates} candidates from ${resolvedEmails.length} emails to Claude (${MODEL}).`);
 
+  const userPrompt = buildUserPrompt(resolvedEmails);
+  if (process.env.DEBUG_CURATE) {
+    console.log('[curate:input]', userPrompt);
+  }
+
   const message = await client.messages.create({
     model:      MODEL,
     max_tokens: 4096,
     system:     buildSystemPrompt(preferences, format),
-    messages:   [{ role: 'user', content: buildUserPrompt(resolvedEmails) }],
+    messages:   [{ role: 'user', content: userPrompt }],
   });
 
   const raw = message.content
     .filter(block => block.type === 'text')
     .map(block => block.text)
     .join('');
+
+  if (process.env.DEBUG_CURATE) {
+    console.log('[curate:raw]', raw);
+  }
 
   const items = parseDigestItems(raw);
 
