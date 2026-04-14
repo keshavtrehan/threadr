@@ -117,7 +117,7 @@ function buildUserPrompt(resolvedEmails) {
 // ---------------------------------------------------------------------------
 // Candidate trimmer
 // ---------------------------------------------------------------------------
-const MAX_CANDIDATES = 150;
+const MAX_CANDIDATES = 80;
 
 /**
  * Trim resolvedEmails to at most MAX_CANDIDATES total candidates.
@@ -192,13 +192,10 @@ async function curate(resolvedEmails) {
   console.log(`[curate] Sending ${trimmedCount} candidates from ${trimmedEmails.length} emails to Claude (${MODEL}).`);
 
   const userPrompt = buildUserPrompt(trimmedEmails);
-  if (process.env.DEBUG_CURATE) {
-    console.log('[curate:input]', userPrompt);
-  }
 
   const message = await client.messages.create({
     model:      MODEL,
-    max_tokens: 6000,
+    max_tokens: 8000,
     system:     buildSystemPrompt(preferences, format),
     messages:   [{ role: 'user', content: userPrompt }],
   });
@@ -207,10 +204,6 @@ async function curate(resolvedEmails) {
     .filter(block => block.type === 'text')
     .map(block => block.text)
     .join('');
-
-  if (process.env.DEBUG_CURATE) {
-    console.log('[curate:raw]', raw);
-  }
 
   const items = parseDigestItems(raw);
 
